@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 비정형 수발주서 자동 입력 시스템</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-800">
+
+    <!-- Header -->
+    <header class="bg-indigo-700 text-white shadow-md">
+        <div class="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+            <h1 class="text-xl font-bold flex items-center gap-2">
+                <i class="fa-solid fa-file-invoice-dollar"></i> AI 수발주서 자동 분석 및 주문 입력
+            </h1>
+            <span class="text-xs bg-indigo-800 px-3 py-1 rounded-full text-indigo-200">v1.0 Ready</span>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        <!-- Left Panel: File Upload & Document Preview -->
+        <section class="lg:col-span-5 bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col">
+            <h2 class="text-lg font-semibold mb-4 text-slate-700 flex items-center gap-2">
+                <i class="fa-solid fa-upload text-indigo-600"></i> 서류 업로드 및 미리보기
+            </h2>
+            
+            <!-- Dropzone -->
+            <div id="dropzone" class="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center hover:border-indigo-500 hover:bg-indigo-50/50 transition cursor-pointer mb-4">
+                <input type="file" id="fileInput" class="hidden" accept="image/*,.pdf">
+                <i class="fa-solid fa-cloud-arrow-up text-3xl text-slate-400 mb-2"></i>
+                <p class="text-sm font-medium text-slate-600">발주서 파일(JPG, PNG, PDF, 팩스 스캔본)을 드래그하거나 클릭하세요</p>
+                <p class="text-xs text-slate-400 mt-1">거래처별 제각각 양식 지원</p>
+            </div>
+
+            <!-- Image Preview Box -->
+            <div class="flex-1 border rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden min-h-[350px] relative">
+                <img id="imagePreview" src="" alt="문서 미리보기" class="hidden max-h-full max-w-full object-contain">
+                <div id="previewPlaceholder" class="text-slate-400 text-sm text-center">
+                    <i class="fa-regular fa-file-image text-4xl mb-2 block"></i>
+                    업로드된 문서가 여기에 표시됩니다.
+                </div>
+            </div>
+
+            <!-- AI Process Button -->
+            <button id="analyzeBtn" onclick="runAiAnalysis()" disabled class="mt-4 w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-medium py-2.5 rounded-lg transition flex items-center justify-center gap-2">
+                <i class="fa-solid fa-wand-magic-sparkles"></i> AI 서류 분석 시작
+            </button>
+        </section>
+
+        <!-- Right Panel: Extracted Order Data Form -->
+        <section class="lg:col-span-7 bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-semibold text-slate-700 flex items-center gap-2">
+                    <i class="fa-solid fa-list-check text-indigo-600"></i> 추출된 주문 정보 (검증 및 수정)
+                </h2>
+                <span id="statusBadge" class="hidden text-xs px-2.5 py-1 rounded-full font-medium bg-amber-100 text-amber-800">
+                    분석 중...
+                </span>
+            </div>
+
+            <!-- Order Master Information -->
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 mb-1">거래처명</label>
+                    <input type="text" id="clientName" class="w-full text-sm border rounded px-2 py-1 bg-white focus:outline-indigo-500" placeholder="자동 추출됨">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 mb-1">발주일자</label>
+                    <input type="date" id="orderDate" class="w-full text-sm border rounded px-2 py-1 bg-white focus:outline-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 mb-1">납기요청일</label>
+                    <input type="date" id="deliveryDate" class="w-full text-sm border rounded px-2 py-1 bg-white focus:outline-indigo-500">
+                </div>
+                <div class="col-span-2 sm:col-span-3">
+                    <label class="block text-xs font-semibold text-slate-500 mb-1">배송지 주소 / 특이사항</label>
+                    <input type="text" id="deliveryAddress" class="w-full text-sm border rounded px-2 py-1 bg-white focus:outline-indigo-500" placeholder="자동 추출됨">
+                </div>
+            </div>
+
+            <!-- Order Item Details Table -->
+            <div class="flex-1 overflow-x-auto border border-slate-200 rounded-lg mb-4">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-slate-100 text-slate-600 border-b">
+                        <tr>
+                            <th class="p-2">품목명</th>
+                            <th class="p-2 w-24">규격/옵션</th>
+                            <th class="p-2 w-20 text-right">수량</th>
+                            <th class="p-2 w-24 text-right">단가(원)</th>
+                            <th class="p-2 w-28 text-right">공급가액</th>
+                            <th class="p-2 w-10 text-center">삭제</th>
+                        </tr>
+                    </thead>
+                    <tbody id="itemTableBody" class="divide-y divide-slate-200">
+                        <tr>
+                            <td colspan="6" class="p-8 text-center text-slate-400">서류를 업로드하고 [AI 서류 분석 시작] 버튼을 누르세요.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Action Area -->
+            <div class="flex items-center justify-between border-t pt-4">
+                <button onclick="addEmptyRow()" class="text-sm text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1">
+                    <i class="fa-solid fa-plus"></i> 품목 추가
+                </button>
+                <div class="flex gap-2">
+                    <button onclick="exportJSON()" class="px-4 py-2 border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-slate-100 font-medium">
+                        JSON 다운로드
+                    </button>
+                    <button onclick="submitOrder()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition flex items-center gap-1">
+                        <i class="fa-solid fa-check"></i> 주문 확정/입력
+                    </button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('fileInput');
+        const imagePreview = document.getElementById('imagePreview');
+        const previewPlaceholder = document.getElementById('previewPlaceholder');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+
+        // File Selection Handlers
+        dropzone.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', handleFileSelect);
+
+        dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('border-indigo-500'); });
+        dropzone.addEventListener('dragleave', () => dropzone.classList.remove('border-indigo-500'));
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('border-indigo-500');
+            if (e.dataTransfer.files.length) {
+                fileInput.files = e.dataTransfer.files;
+                handleFileSelect();
+            }
+        });
+
+        function handleFileSelect() {
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    imagePreview.src = e.target.result;
+                    imagePreview.classList.remove('hidden');
+                    previewPlaceholder.classList.add('hidden');
+                };
+                reader.readAsDataURL(file);
+            } else {
+                imagePreview.classList.add('hidden');
+                previewPlaceholder.classList.remove('hidden');
+                previewPlaceholder.innerHTML = `<i class="fa-regular fa-file-pdf text-4xl text-red-500 mb-2 block"></i> ${file.name}`;
+            }
+            analyzeBtn.disabled = false;
+        }
+
+        // AI Analysis Simulation (Switchable to Real API)
+        async function runAiAnalysis() {
+            const statusBadge = document.getElementById('statusBadge');
+            statusBadge.innerText = 'AI 분석 진행 중...';
+            statusBadge.className = 'text-xs px-2.5 py-1 rounded-full font-medium bg-amber-100 text-amber-800';
+            statusBadge.classList.remove('hidden');
+
+            analyzeBtn.disabled = true;
+
+            // TODO: Real API Call Hook Place (e.g., callVisionLLMApi(fileInput.files[0]))
+            setTimeout(() => {
+                // Dummy extracted structured JSON output
+                const mockData = {
+                    clientName: "(주)한국유통",
+                    orderDate: "2026-09-02",
+                    deliveryDate: "2026-09-05",
+                    deliveryAddress: "서울시 금천구 가산디지털1로 123 4층 물류센터",
+                    items: [
+                        { name: "프리미엄 원두 A타입 1kg", spec: "1kg/팩", qty: 10, unitPrice: 25000 },
+                        { name: "친환경 종이컵 12oz", spec: "1,000개/박스", qty: 5, unitPrice: 48000 },
+                        { name: "유기농 시럽 750ml", spec: "병", qty: 3, unitPrice: 12000 }
+                    ]
+                };
+
+                renderData(mockData);
+
+                statusBadge.innerText = '분석 완료';
+                statusBadge.className = 'text-xs px-2.5 py-1 rounded-full font-medium bg-emerald-100 text-emerald-800';
+                analyzeBtn.disabled = false;
+            }, 1500);
+        }
+
+        function renderData(data) {
+            document.getElementById('clientName').value = data.clientName;
+            document.getElementById('orderDate').value = data.orderDate;
+            document.getElementById('deliveryDate').value = data.deliveryDate;
+            document.getElementById('deliveryAddress').value = data.deliveryAddress;
+
+            const tbody = document.getElementById('itemTableBody');
+            tbody.innerHTML = '';
+
+            data.items.forEach(item => {
+                const tr = document.createElement('tr');
+                const amount = item.qty * item.unitPrice;
+                tr.innerHTML = `
+                    <td class="p-2"><input type="text" value="${item.name}" class="w-full border rounded px-1.5 py-0.5 text-sm"></td>
+                    <td class="p-2"><input type="text" value="${item.spec}" class="w-full border rounded px-1.5 py-0.5 text-sm"></td>
+                    <td class="p-2"><input type="number" value="${item.qty}" oninput="updateRowAmount(this)" class="qty w-full border rounded px-1.5 py-0.5 text-sm text-right"></td>
+                    <td class="p-2"><input type="number" value="${item.unitPrice}" oninput="updateRowAmount(this)" class="price w-full border rounded px-1.5 py-0.5 text-sm text-right"></td>
+                    <td class="p-2 text-right font-medium amount">${amount.toLocaleString()}</td>
+                    <td class="p-2 text-center"><button onclick="this.closest('tr').remove()" class="text-slate-400 hover:text-red-500"><i class="fa-solid fa-trash-can"></i></button></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function updateRowAmount(input) {
+            const tr = input.closest('tr');
+            const qty = parseFloat(tr.querySelector('.qty').value) || 0;
+            const price = parseFloat(tr.querySelector('.price').value) || 0;
+            tr.querySelector('.amount').innerText = (qty * price).toLocaleString();
+        }
+
+        function addEmptyRow() {
+            const tbody = document.getElementById('itemTableBody');
+            if (tbody.children.length === 1 && tbody.children[0].cells.length === 1) tbody.innerHTML = '';
+            
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="p-2"><input type="text" placeholder="품목명 입력" class="w-full border rounded px-1.5 py-0.5 text-sm"></td>
+                <td class="p-2"><input type="text" placeholder="규격" class="w-full border rounded px-1.5 py-0.5 text-sm"></td>
+                <td class="p-2"><input type="number" value="1" oninput="updateRowAmount(this)" class="qty w-full border rounded px-1.5 py-0.5 text-sm text-right"></td>
+                <td class="p-2"><input type="number" value="0" oninput="updateRowAmount(this)" class="price w-full border rounded px-1.5 py-0.5 text-sm text-right"></td>
+                <td class="p-2 text-right font-medium amount">0</td>
+                <td class="p-2 text-center"><button onclick="this.closest('tr').remove()" class="text-slate-400 hover:text-red-500"><i class="fa-solid fa-trash-can"></i></button></td>
+            `;
+            tbody.appendChild(tr);
+        }
+
+        function exportJSON() {
+            const data = getFormData();
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `order_${data.clientName}_${data.orderDate}.json`;
+            a.click();
+        }
+
+        function submitOrder() {
+            const data = getFormData();
+            alert(`[주문 등록 완료]\n거래처: ${data.clientName}\n총 품목 수: ${data.items.length}개`);
+            console.log('최종 등록 데이터:', data);
+        }
+
+        function getFormData() {
+            const rows = Array.from(document.querySelectorAll('#itemTableBody tr'));
+            const items = rows.map(tr => {
+                const inputs = tr.querySelectorAll('input');
+                if (inputs.length < 4) return null;
+                return {
+                    name: inputs[0].value,
+                    spec: inputs[1].value,
+                    qty: Number(inputs[2].value),
+                    unitPrice: Number(inputs[3].value),
+                    totalAmount: Number(inputs[2].value) * Number(inputs[3].value)
+                };
+            }).filter(Boolean);
+
+            return {
+                clientName: document.getElementById('clientName').value,
+                orderDate: document.getElementById('orderDate').value,
+                deliveryDate: document.getElementById('deliveryDate').value,
+                deliveryAddress: document.getElementById('deliveryAddress').value,
+                items: items
+            };
+        }
+    </script>
+</body>
+</html>

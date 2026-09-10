@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS (엑셀 다운로드 기능용) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <title>BTB WMS Professional v2.7.3</title>
+    <style>
+        .tab-content { display: none; }
+        .active-tab { display: block !important; }
+        .tab-btn { transition: all 0.2s; cursor: pointer; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        .modal-scroll { max-height: 60vh; overflow-y: auto; }
+    </style>
+</head>
+<body class="bg-gray-50 text-slate-800">
+
+    <!-- 로그인 화면 -->
+    <div id="login-screen" class="fixed inset-0 bg-slate-900 flex items-center justify-center z-50">
+        <div class="bg-white p-10 rounded-3xl w-full max-w-sm shadow-2xl">
+            <h2 class="text-2xl font-bold mb-6 text-center text-slate-800">BTB WMS Login</h2>
+            <input type="text" id="login-id" placeholder="ID" class="w-full p-4 mb-3 bg-gray-50 rounded-xl border outline-none focus:border-blue-500">
+            <input type="password" id="login-pw" placeholder="비밀번호" class="w-full p-4 mb-6 bg-gray-50 rounded-xl border outline-none focus:border-blue-500">
+            <button id="login-btn" class="w-full bg-blue-600 text-white p-4 rounded-xl font-bold hover:bg-blue-700 transition-all">접속하기</button>
+        </div>
+    </div>
+
+    <!-- 로케이션 선택 모달 -->
+    <div id="loc-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div class="bg-white p-8 rounded-3xl w-full max-w-md shadow-2xl">
+            <h2 class="text-xl font-bold mb-4">로케이션 선택</h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-xs font-bold text-gray-500">1. 챔버 (01~10)</label>
+                    <div id="chamber-grid" class="grid grid-cols-5 gap-2 mt-1"></div>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-gray-500">2. 통로 (01~10)</label>
+                    <div id="aisle-grid" class="grid grid-cols-5 gap-2 mt-1"></div>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-gray-500">3. 셀 (001~100)</label>
+                    <select id="cell-select" class="w-full p-3 border rounded-xl mt-1 outline-none"></select>
+                </div>
+                <div class="pt-4 border-t">
+                    <p class="text-center mb-4 text-blue-600 font-mono font-bold text-xl" id="selected-loc-display">01-01-001</p>
+                    <div class="flex gap-2">
+                        <button id="close-loc-modal-btn" class="w-1/2 bg-gray-100 p-3 rounded-xl font-bold">취소</button>
+                        <button id="confirm-loc-btn" class="w-1/2 bg-blue-600 text-white p-3 rounded-xl font-bold">선택 완료</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 반품 대상 선택 모달 -->
+    <div id="return-select-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div class="bg-white p-8 rounded-3xl w-full max-w-2xl shadow-2xl">
+            <h2 class="text-xl font-bold mb-4">반품 처리할 출고 내역 선택</h2>
+            <div id="out-history-list" class="modal-scroll border rounded-xl overflow-hidden"></div>
+            <button id="close-return-modal-btn" class="w-full mt-4 bg-gray-200 p-3 rounded-xl font-bold">닫기</button>
+        </div>
+    </div>
+
+    <!-- 출고 배치 선택 모달 -->
+    <div id="select-batch-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div class="bg-white p-8 rounded-3xl w-full max-w-lg shadow-2xl">
+            <h2 class="text-xl font-bold mb-2">출고할 재고 선택</h2>
+            <p class="text-xs text-gray-500 mb-4">* 유통기한이 가장 가까운 순서로 표시됩니다.</p>
+            <div id="batch-select-list" class="max-h-60 overflow-y-auto mb-4 border rounded-xl"></div>
+            <button id="close-batch-modal-btn" class="w-full bg-gray-200 p-3 rounded-xl font-bold hover:bg-gray-300">취소</button>
+        </div>
+    </div>
+
+    <!-- 메인 앱 영역 -->
+    <div id="app" class="hidden max-w-6xl mx-auto p-4 md:p-8">
+        <header class="flex justify-between items-center mb-8">
+            <h1 class="text-2xl font-bold tracking-tight text-slate-900">📦 BTB WMS <span class="text-blue-600 text-sm ml-2" id="version-tag">v2.7.3</span></h1>
+            <div class="flex gap-4 text-sm items-center">
+                <span id="role-indicator" class="px-3 py-1 rounded-full bg-slate-100 text-slate-500 font-bold text-[10px] uppercase tracking-widest">User Mode</span>
+                <button id="logout-btn" class="text-gray-500 hover:bg-gray-100 p-2 rounded-lg font-bold">로그아웃</button>
+            </div>
+        </header>
+
+        <!-- 탭 네비게이션 -->
+        <div id="tabs" class="flex gap-2 mb-8 border-b pb-2 overflow-x-auto">
+            <button data-tab="inbound" class="tab-btn font-bold text-blue-600 border-b-2 border-blue-600 px-6 py-2 whitespace-nowrap">입고관리</button>
+            <button data-tab="inventory" class="tab-btn font-bold text-gray-400 border-b-2 border-transparent px-6 py-2 whitespace-nowrap">재고현황</button>
+            <button data-tab="outbound" class="tab-btn font-bold text-gray-400 border-b-2 border-transparent px-6 py-2 whitespace-nowrap">출고관리</button>
+            <button data-tab="return" class="tab-btn font-bold text-gray-400 border-b-2 border-transparent px-6 py-2 whitespace-nowrap">반품관리</button>
+            <button data-tab="history" class="tab-btn font-bold text-gray-400 border-b-2 border-transparent px-6 py-2 whitespace-nowrap">이력관리</button>
+            <button data-tab="accounts" id="tab-accounts" class="hidden tab-btn font-bold text-gray-400 border-b-2 border-transparent px-6 py-2 whitespace-nowrap">계정관리</button>
+        </div>
+
+        <!-- 1. 입고 관리 -->
+        <div id="inbound" class="tab-content active-tab bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
+            <h2 class="text-lg font-bold mb-6 flex items-center gap-2"><span class="w-2 h-6 bg-blue-600 rounded-full"></span>신규 입고 등록</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div><label class="block text-sm font-bold mb-2 text-gray-600">제품명</label><input type="text" id="in-name" class="w-full p-4 bg-gray-50 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none"></div>
+                <div><label class="block text-sm font-bold mb-2 text-gray-600">거래처명</label><input type="text" id="in-client" class="w-full p-4 bg-gray-50 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none"></div>
+                <div><label class="block text-sm font-bold mb-2 text-gray-600">유통기한 (연도 4자리)</label><input type="date" id="in-expiry" class="w-full p-4 bg-gray-50 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none"></div>
+                <div><label class="block text-sm font-bold mb-2 text-gray-600">수량</label><input type="number" id="in-qty" class="w-full p-4 bg-gray-50 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none"></div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-bold mb-2 text-gray-600">로케이션 (숫자 7자리 입력 시 자동변환)</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="in-loc" placeholder="01-01-001" maxlength="9" class="w-full p-4 bg-gray-50 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none font-mono">
+                        <button id="open-loc-btn" class="bg-slate-800 text-white px-6 rounded-xl font-bold whitespace-nowrap">로케이션 선택</button>
+                    </div>
+                </div>
+                <button id="add-stock-btn" class="md:col-span-2 bg-blue-600 text-white p-5 rounded-2xl font-bold shadow-lg hover:bg-blue-700 transition-all">입고 처리하기</button>
+            </div>
+        </div>
+
+        <!-- 2. 재고 현황 -->
+        <div id="inventory" class="tab-content bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+                <h2 class="text-lg font-bold flex items-center gap-2"><span class="w-2 h-6 bg-indigo-600 rounded-full"></span>실시간 재고 현황</h2>
+                <div class="flex gap-2 w-full md:w-auto">
+                    <button id="inv-excel-btn" class="bg-green-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-green-700">재고 엑셀</button>
+                    <select id="filter-product" class="p-2 border rounded-xl bg-gray-50 text-sm outline-none"><option value="all">전체 제품</option></select>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead>
+                        <tr class="text-gray-400 text-xs uppercase tracking-wider border-b">
+                            <th class="py-4">제품명</th>
+                            <th class="py-4">입고일자</th>
+                            <th class="py-4">유통기한 (잔여일)</th>
+                            <th class="py-4">로케이션</th>
+                            <th class="py-4 text-right pr-4">현재고</th>
+                        </tr>
+                    </thead>
+                    <tbody id="inv-list" class="text-sm"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 3. 출고 관리 -->
+        <div id="outbound" class="tab-content bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
+            <h2 class="text-lg font-bold mb-6 flex items-center gap-2"><span class="w-2 h-6 bg-slate-800 rounded-full"></span>개별 출고 처리</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div><label class="block text-sm font-bold mb-2 text-gray-600">제품명</label><input type="text" id="out-name" list="prod-list" class="w-full p-4 bg-gray-50 rounded-xl border focus:ring-2 focus:ring-slate-500 outline-none" placeholder="제품명 입력 시 재고 팝업"><datalist id="prod-list"></datalist></div>
+                <div><label class="block text-sm font-bold mb-2 text-gray-600">거래처명</label><input type="text" id="out-client" class="w-full p-4 bg-gray-50 rounded-xl border focus:ring-2 focus:ring-slate-500 outline-none"></div>
+                <div><label class="block text-sm font-bold mb-2 text-gray-600">유통기한</label><input type="text" id="out-expiry" class="w-full p-4 bg-gray-50 rounded-xl border bg-gray-100" readonly></div>
+                <div><label class="block text-sm font-bold mb-2 text-gray-600">출고 수량</label><input type="number" id="out-qty" class="w-full p-4 bg-gray-50 rounded-xl border focus:ring-2 focus:ring-slate-500 outline-none"></div>
+                <div class="md:col-span-2"><label class="block text-sm font-bold mb-2 text-gray-600">로케이션</label><input type="text" id="out-loc" class="w-full p-4 bg-gray-50 rounded-xl border bg-gray-100 font-mono" readonly></div>
+                <input type="hidden" id="out-target-id"><button id="remove-stock-btn" class="md:col-span-2 bg-slate-900 text-white p-5 rounded-2xl font-bold shadow-lg hover:bg-black transition-all">출고 완료</button>
+            </div>
+        </div>
+
+        <!-- 4. 반품 관리 -->
+        <div id="return" class="tab-content bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
+            <h2 class="text-lg font-bold mb-6 flex items-center gap-2"><span class="w-2 h-6 bg-red-600 rounded-full"></span>반품(입고) 처리</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="md:col-span-2">
+                    <button id="open-out-hist-btn" class="w-full bg-slate-100 border-2 border-dashed border-slate-300 p-8 rounded-2xl font-bold text-slate-500 hover:bg-slate-200 transition-all">클릭하여 출고 내역에서 반품 대상 선택</button>
+                </div>
+                <div id="return-info-area" class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6 opacity-50 pointer-events-none">
+                    <div><label class="block text-sm font-bold mb-2 text-gray-600">제품명</label><input type="text" id="ret-name" class="w-full p-4 bg-gray-50 rounded-xl border" readonly></div>
+                    <div><label class="block text-sm font-bold mb-2 text-gray-600">반품 수량</label><input type="number" id="ret-qty" class="w-full p-4 bg-white rounded-xl border outline-none"></div>
+                    <div><label class="block text-sm font-bold mb-2 text-gray-600">유통기한 (연도 4자리)</label><input type="date" id="ret-expiry" class="w-full p-4 bg-white rounded-xl border outline-none"></div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-bold mb-2 text-gray-600">로케이션 (숫자 7자리 입력 시 자동변환)</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="ret-loc" placeholder="01-01-001" maxlength="9" class="w-full p-4 bg-white rounded-xl border outline-none font-mono">
+                            <button id="open-loc-btn-ret" class="bg-slate-800 text-white px-6 rounded-xl font-bold whitespace-nowrap">로케이션 선택</button>
+                        </div>
+                    </div>
+                    <button id="process-return-btn" class="md:col-span-2 bg-red-600 text-white p-5 rounded-2xl font-bold hover:bg-red-700 transition-all">반품 완료 (재고 합산)</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5. 이력 관리 -->
+        <div id="history" class="tab-content bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
+            <div class="flex justify-between items-center mb-6"><h2 class="text-lg font-bold flex items-center gap-2"><span class="w-2 h-6 bg-green-600 rounded-full"></span>입출고 이력</h2><button id="download-excel-btn" class="bg-green-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-green-700">이력 엑셀</button></div>
+            <div class="overflow-x-auto border rounded-xl"><table class="w-full text-left text-sm"><thead><tr class="bg-gray-50 border-b"><th class="p-4">일자</th><th class="p-4">구분</th><th class="p-4">거래처</th><th class="p-4">제품명</th><th class="p-4">로케이션</th><th class="p-4">수량</th></tr></thead><tbody id="hist-list"></tbody></table></div>
+        </div>
+
+        <!-- 6. 계정 관리 (Admin 전용) -->
+        <div id="accounts" class="tab-content bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
+            <h2 class="text-lg font-bold mb-6 flex items-center gap-2"><span class="w-2 h-6 bg-orange-500 rounded-full"></span>시스템 계정 관리</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 bg-slate-50 p-6 rounded-2xl">
+                <div><label class="block text-xs font-bold mb-1">아이디</label><input type="text" id="new-user-id" class="w-full p-3 border rounded-xl outline-none"></div>
+                <div><label class="block text-xs font-bold mb-1">비밀번호</label><input type="text" id="new-user-pw" class="w-full p-3 border rounded-xl outline-none"></div>
+                <div class="flex items-end"><button id="add-user-btn" class="w-full bg-orange-500 text-white p-3 rounded-xl font-bold">계정 생성</button></div>
+            </div>
+            <div class="overflow-x-auto"><table class="w-full text-left text-sm"><thead><tr class="text-gray-400 border-b"><th class="pb-4">아이디</th><th class="pb-4">비밀번호</th><th class="pb-4 text-right">관리</th></tr></thead><tbody id="user-list-body"></tbody></table></div>
+        </div>
+    </div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { 
+        getFirestore, collection, addDoc, onSnapshot, query, orderBy, 
+        deleteDoc, doc, updateDoc, getDocs, where 
+    } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyCvgPTSCdzSnKxoxYdouiTBDN5JuNEj234",
+        authDomain: "btb-wms.firebaseapp.com",
+        projectId: "btb-wms",
+        storageBucket: "btb-wms.firebasestorage.app",
+        messagingSenderId: "430720721016",
+        appId: "1:430720721016:web:1081ef67831ba191be8d8d"
+    };
+
+    const fbApp = initializeApp(firebaseConfig);
+    const db = getFirestore(fbApp);
+    const invCol = collection(db, "inventory"), histCol = collection(db, "history"), userCol = collection(db, "users");
+
+    let inventory = [], history = [], users = [], isAdmin = false;
+    let selChamber = '01', selAisle = '01', selCell = '001', currentLocTarget = 'in-loc';
+
+    const today = () => new Date().toISOString().split('T')[0];
+
+    const getDDay = (expiry) => {
+        if (!expiry) return "";
+        const diff = new Date(expiry) - new Date(today());
+        const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+        return days >= 0 ? `<span class="ml-2 text-blue-500 font-bold">(D-${days})</span>` : `<span class="ml-2 text-red-500 font-bold">(경과)</span>`;
+    };
+
+    const closeModal = (id) => document.getElementById(id).classList.add('hidden');
+    const openModal = (id) => document.getElementById(id).classList.remove('hidden');
+
+    // --- 인증 기능 ---
+    async function checkLogin() {
+        const id = document.getElementById('login-id').value, pw = document.getElementById('login-pw').value;
+        if (!id || !pw) return alert("아이디와 비밀번호를 입력하세요.");
+        try {
+            if (id === 'admin' && pw === 'admin') { 
+                isAdmin = true; 
+                completeLogin();
+            } else {
+                const q = query(userCol, where("id", "==", id), where("pw", "==", pw));
+                const snap = await getDocs(q);
+                if (!snap.empty) { 
+                    isAdmin = false; 
+                    completeLogin();
+                } else { alert("정보가 일치하지 않습니다."); }
+            }
+        } catch (e) { alert("로그인 중 오류가 발생했습니다."); }
+    }
+
+    function completeLogin() {
+        localStorage.setItem('btb_auth', JSON.stringify({ isAdmin }));
+        loginSuccess();
+    }
+
+    function loginSuccess() {
+        document.getElementById('login-screen').classList.add('hidden');
+        document.getElementById('app').classList.remove('hidden');
+        if (isAdmin) {
+            document.getElementById('role-indicator').innerText = "Administrator Mode";
+            document.getElementById('tab-accounts').classList.remove('hidden');
+        }
+        listenToData();
+        initLocModal();
+        seedMockInventory();
+    }
+
+    function logout() {
+        localStorage.removeItem('btb_auth');
+        location.reload();
+    }
+
+    // --- 샘플 데이터 자동 생성 ---
+    async function seedMockInventory() {
+        try {
+            const snap = await getDocs(invCol);
+            if (snap.empty) {
+                const mockItems = [
+                    { name: "프리미엄 원두 커피 1kg", expiry: "2026-12-31", location: "01-02-005", qty: 150, originalClient: "(주)로스팅코리아", inboundDate: today() },
+                    { name: "유기농 우유 1L", expiry: "2026-09-15", location: "02-01-012", qty: 80, originalClient: "서울유업", inboundDate: today() },
+                    { name: "아몬드 시럽 750ml", expiry: "2027-05-20", location: "01-05-030", qty: 200, originalClient: "글로벌푸드", inboundDate: today() },
+                    { name: "종이컵 13oz (1000개입)", expiry: "2028-01-01", location: "03-03-088", qty: 50, originalClient: "친환경패키지", inboundDate: today() },
+                    { name: "바닐라 파우더 1kg", expiry: "2026-11-10", location: "02-04-015", qty: 120, originalClient: "대한제당", inboundDate: today() }
+                ];
+                for (const item of mockItems) {
+                    await addDoc(invCol, item);
+                    await addDoc(histCol, { date: today(), type: '입고', client: item.originalClient, name: item.name, location: item.location, qty: item.qty, timestamp: Date.now() });
+                }
+            }
+        } catch(e) { console.error("Seeding Error:", e); }
+    }
+
+    // --- 데이터 실시간 수신 ---
+    function listenToData() {
+        onSnapshot(query(invCol, orderBy("name")), (snap) => {
+            inventory = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            renderInventory(); 
+            updateDatalist();
+        });
+        onSnapshot(query(histCol, orderBy("timestamp", "desc")), (snap) => {
+            history = snap.docs.map(d => d.data());
+            renderHistory();
+        });
+        onSnapshot(userCol, (snap) => {
+            users = snap.docs.map(d => ({ docId: d.id, ...d.data() }));
+            renderUsers();
+        });
+    }
+
+    function updateDatalist() {
+        const uniqueNames = [...new Set(inventory.map(i => i.name))];
+        const datalist = document.getElementById('prod-list');
+        if (datalist) datalist.innerHTML = uniqueNames.map(n => `<option value="${n}">`).join('');
+
+        const filterSelect = document.getElementById('filter-product');
+        if (filterSelect) {
+            const currVal = filterSelect.value;
+            filterSelect.innerHTML = `<option value="all">전체 제품</option>` + uniqueNames.map(n => `<option value="${n}">${n}</option>`).join('');
+            filterSelect.value = currVal;
+        }
+    }
+
+    function renderUsers() {
+        document.getElementById('user-list-body').innerHTML = users.map(u => `
+            <tr class="border-b">
+                <td class="py-4 font-mono">${u.id}</td>
+                <td class="py-4"><input type="text" id="pw-${u.docId}" value="${u.pw}" class="bg-gray-50 border rounded px-2 py-1 font-mono text-sm outline-none"></td>
+                <td class="py-4 text-right space-x-2">
+                    <button onclick="window.updateUser('${u.docId}')" class="text-orange-500 font-bold">수정</button>
+                    <button onclick="window.deleteUser('${u.docId}')" class="text-red-500 font-bold">삭제</button>
+                </td>
+            </tr>`).join('');
+    }
+
+    window.updateUser = async (docId) => {
+        const newPw = document.getElementById(`pw-${docId}`).value;
+        if(confirm("수정하시겠습니까?")) await updateDoc(doc(db, "users", docId), { pw: newPw });
+    };
+
+    window.deleteUser = async (id) => { 
+        if(confirm("삭제하시겠습니까?")) await deleteDoc(doc(db, "users", id)); 
+    };
+
+    async function handleAddUser() {
+        const id = document.getElementById('new-user-id').value, pw = document.getElementById('new-user-pw').value;
+        if (id && pw) {
+            await addDoc(userCol, { id, pw });
+            document.getElementById('new-user-id').value = '';
+            document.getElementById('new-user-pw').value = '';
+        }
+    }
+
+    // --- 입고 처리 핵심 로직 ---
+    async function handleAddStock() {
+        const name = document.getElementById('in-name').value.trim();
+        const client = document.getElementById('in-client').value.trim();
+        const expiry = document.getElementById('in-expiry').value;
+        const loc = document.getElementById('in-loc').value.trim();
+        const qty = parseInt(document.getElementById('in-qty').value);
+
+        if(!name || !client || isNaN(qty) || !expiry) return alert("필수 정보를 입력하세요.");
+        if(qty <= 0) return alert("수량은 1개 이상이어야 합니다.");
+        if(expiry.split('-')[0].length !== 4) return alert("연도는 4자리 형식이어야 합니다.");
+        
+        const pureLoc = loc.replace(/-/g, '');
+        if(!/^\d{7}$/.test(pureLoc)) return alert("로케이션 형식을 확인하세요 (숫자 7자리).");
+        const formattedLoc = pureLoc.replace(/(\d{2})(\d{2})(\d{3})/, '$1-$2-$3');
+
+        try {
+            await addDoc(invCol, { name, expiry, location: formattedLoc, qty, originalClient: client, inboundDate: today() });
+            await addDoc(histCol, { date: today(), type: '입고', client, name, location: formattedLoc, qty, timestamp: Date.now() });
+            alert("입고 처리가 완료되었습니다.");
+            ['in-name', 'in-client', 'in-expiry', 'in-qty', 'in-loc'].forEach(id => document.getElementById(id).value = '');
+        } catch (e) {
+            console.error("입고 처리 중 오류:", e);
+            alert("입고 처리 실패: " + e.message);
+        }
+    }
+
+    function renderInventory() {
+        const f = document.getElementById('filter-product').value;
+        document.getElementById('inv-list').innerHTML = inventory.filter(i => f === 'all' || i.name === f).map(i => `
+            <tr class="border-b hover:bg-slate-50">
+                <td class="py-4 font-bold">${i.name}</td>
+                <td class="py-4 text-xs text-gray-500">${i.inboundDate || '-'}</td>
+                <td class="py-4 text-xs">${i.expiry || "없음"} ${i.expiry ? getDDay(i.expiry) : ''}</td>
+                <td class="py-4 font-mono text-xs">${i.location}</td>
+                <td class="py-4 font-black text-right pr-4">${i.qty.toLocaleString()}</td>
+            </tr>`).join('');
+    }
+
+    function renderHistory() {
+        document.getElementById('hist-list').innerHTML = history.map(h => `
+            <tr class="border-b hover:bg-slate-50">
+                <td class="p-4 text-xs text-gray-500">${h.date}</td>
+                <td class="p-4"><span class="px-2 py-1 rounded text-xs font-bold ${h.type==='입고'?'bg-blue-100 text-blue-600':h.type==='출고'?'bg-slate-100 text-slate-800':'bg-red-100 text-red-600'}">${h.type}</span></td>
+                <td class="p-4">${h.client}</td>
+                <td class="p-4 font-bold">${h.name}</td>
+                <td class="p-4 font-mono text-xs">${h.location}</td>
+                <td class="p-4 font-bold">${h.qty.toLocaleString()}</td>
+            </tr>`).join('');
+    }
+
+    window.setOutItem = (id, name, exp, loc, qty) => {
+        document.getElementById('out-target-id').value = id; 
+        document.getElementById('out-name').value = name;
+        document.getElementById('out-expiry').value = exp; 
+        document.getElementById('out-loc').value = loc;
+        document.getElementById('out-qty').placeholder = `최대 ${qty}`; 
+        closeModal('select-batch-modal');
+    };
+
+    // --- 출고 처리 ---
+    async function handleRemoveStock() {
+        const id = document.getElementById('out-target-id').value, qty = parseInt(document.getElementById('out-qty').value), cl = document.getElementById('out-client').value;
+        if(!id || isNaN(qty) || !cl) return alert("출고 정보를 정확히 입력하세요.");
+        const item = inventory.find(i => i.id === id);
+        if(!item) return alert("선택된 재고 항목을 찾을 수 없습니다.");
+        if(qty > item.qty) return alert("출고 수량이 현재고보다 많습니다.");
+
+        if(qty === item.qty) await deleteDoc(doc(db, "inventory", id));
+        else await updateDoc(doc(db, "inventory", id), { qty: item.qty - qty });
+
+        await addDoc(histCol, { date: today(), type: '출고', client: cl, name: item.name, location: item.location, qty, timestamp: Date.now() });
+        alert("출고 처리 완료");
+        ['out-target-id', 'out-name', 'out-client', 'out-expiry', 'out-qty', 'out-loc'].forEach(id => document.getElementById(id).value = '');
+    }
+
+    window.selectReturnTarget = (name, client, qty, loc) => {
+        document.getElementById('ret-name').value = name;
+        document.getElementById('ret-qty').value = qty;
+        document.getElementById('ret-loc').value = loc;
+        document.getElementById('return-info-area').classList.remove('opacity-50', 'pointer-events-none');
+        closeModal('return-select-modal');
+    };
+
+    // --- 반품 처리 ---
+    async function handleProcessReturn() {
+        const name = document.getElementById('ret-name').value, qty = parseInt(document.getElementById('ret-qty').value);
+        const expiry = document.getElementById('ret-expiry').value, loc = document.getElementById('ret-loc').value;
+        if(!expiry || !loc || isNaN(qty)) return alert("필수 정보를 입력하세요.");
+        if(expiry.split('-')[0].length !== 4) return alert("연도는 4자리 형식이어야 합니다.");
+        const pureLoc = loc.replace(/-/g, '');
+        const formattedLoc = pureLoc.replace(/(\d{2})(\d{2})(\d{3})/, '$1-$2-$3');
+        const existing = inventory.find(i => i.name === name && i.expiry === expiry && i.location === formattedLoc);
+        
+        if(existing) await updateDoc(doc(db, "inventory", existing.id), { qty: existing.qty + qty });
+        else await addDoc(invCol, { name, expiry, location: formattedLoc, qty, originalClient: '반품입고', inboundDate: today() });
+        
+        await addDoc(histCol, { date: today(), type: '반품입고', client: '반품', name, location: formattedLoc, qty, timestamp: Date.now() });
+        alert("반품 처리 완료");
+        ['ret-name', 'ret-qty', 'ret-expiry', 'ret-loc'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('return-info-area').classList.add('opacity-50', 'pointer-events-none');
+    }
+
+    // --- 엑셀 다운로드 ---
+    function downloadInventoryExcel() {
+        const data = inventory.map(i => ({
+            "제품명": i.name,
+            "입고일자": i.inboundDate || '-',
+            "유통기한": i.expiry || '없음',
+            "로케이션": i.location,
+            "현재고": i.qty
+        }));
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "재고현황");
+        XLSX.writeFile(wb, `WMS_Inventory_${today()}.xlsx`);
+    }
+
+    function downloadHistoryExcel() {
+        const data = history.map(h => ({
+            "일자": h.date,
+            "구분": h.type,
+            "거래처": h.client,
+            "제품명": h.name,
+            "로케이션": h.location,
+            "수량": h.qty
+        }));
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "입출고이력");
+        XLSX.writeFile(wb, `WMS_History_${today()}.xlsx`);
+    }
+
+    // --- 로케이션 모달 ---
+    function initLocModal() {
+        const cg = document.getElementById('chamber-grid'), ag = document.getElementById('aisle-grid'), cs = document.getElementById('cell-select');
+        cg.innerHTML = Array.from({length:10}, (_,i) => i+1).map(n => `<button class="chamber-btn p-2 border rounded-lg text-xs hover:bg-blue-50" data-val="${String(n).padStart(2,'0')}">${n}번</button>`).join('');
+        ag.innerHTML = Array.from({length:10}, (_,i) => i+1).map(n => `<button class="aisle-btn p-2 border rounded-lg text-xs hover:bg-blue-50" data-val="${String(n).padStart(2,'0')}">${n}번</button>`).join('');
+        cs.innerHTML = Array.from({length:100}, (_,i) => i+1).map(n => `<option value="${String(n).padStart(3,'0')}">${n}번 셀</option>`).join('');
+
+        const updateDisplay = () => {
+            document.getElementById('selected-loc-display').innerText = `${selChamber}-${selAisle}-${selCell}`;
+        };
+
+        cg.querySelectorAll('.chamber-btn').forEach(b => {
+            b.onclick = (e) => {
+                cg.querySelectorAll('.chamber-btn').forEach(btn => btn.classList.remove('bg-blue-600', 'text-white'));
+                e.target.classList.add('bg-blue-600', 'text-white');
+                selChamber = e.target.dataset.val;
+                updateDisplay();
+            };
+        });
+
+        ag.querySelectorAll('.aisle-btn').forEach(b => {
+            b.onclick = (e) => {
+                ag.querySelectorAll('.aisle-btn').forEach(btn => btn.classList.remove('bg-blue-600', 'text-white'));
+                e.target.classList.add('bg-blue-600', 'text-white');
+                selAisle = e.target.dataset.val;
+                updateDisplay();
+            };
+        });
+
+        cs.onchange = (e) => {
+            selCell = e.target.value;
+            updateDisplay();
+        };
+    }
+
+    // --- 이벤트 핸들러 바인딩 ---
+    document.addEventListener('DOMContentLoaded', () => {
+        // 버튼 연결
+        document.getElementById('login-btn')?.addEventListener('click', checkLogin);
+        document.getElementById('logout-btn')?.addEventListener('click', logout);
+        document.getElementById('add-stock-btn')?.addEventListener('click', handleAddStock);
+        document.getElementById('remove-stock-btn')?.addEventListener('click', handleRemoveStock);
+        document.getElementById('process-return-btn')?.addEventListener('click', handleProcessReturn);
+        document.getElementById('add-user-btn')?.addEventListener('click', handleAddUser);
+        document.getElementById('inv-excel-btn')?.addEventListener('click', downloadInventoryExcel);
+        document.getElementById('download-excel-btn')?.addEventListener('click', downloadHistoryExcel);
+
+        // 모달 관련 버튼
+        document.getElementById('open-loc-btn')?.addEventListener('click', () => { currentLocTarget = 'in-loc'; openModal('loc-modal'); });
+        document.getElementById('open-loc-btn-ret')?.addEventListener('click', () => { currentLocTarget = 'ret-loc'; openModal('loc-modal'); });
+        document.getElementById('close-loc-modal-btn')?.addEventListener('click', () => closeModal('loc-modal'));
+        document.getElementById('confirm-loc-btn')?.addEventListener('click', () => {
+            document.getElementById(currentLocTarget).value = `${selChamber}-${selAisle}-${selCell}`;
+            closeModal('loc-modal');
+        });
+
+        document.getElementById('close-return-modal-btn')?.addEventListener('click', () => closeModal('return-select-modal'));
+        document.getElementById('close-batch-modal-btn')?.addEventListener('click', () => closeModal('select-batch-modal'));
+
+        document.getElementById('open-out-hist-btn')?.addEventListener('click', () => {
+            const list = document.getElementById('out-history-list');
+            const outItems = history.filter(h => h.type === '출고');
+            if(outItems.length === 0) {
+                list.innerHTML = `<p class="p-4 text-gray-500 text-center">출고 이력이 없습니다.</p>`;
+            } else {
+                list.innerHTML = outItems.map(h => `
+                    <div class="p-4 border-b hover:bg-gray-50 flex justify-between items-center cursor-pointer" 
+                         onclick="window.selectReturnTarget('${h.name}', '${h.client}', ${h.qty}, '${h.location}')">
+                        <div>
+                            <p class="font-bold">${h.name} (${h.qty}개)</p>
+                            <p class="text-xs text-gray-500">${h.date} | 거래처: ${h.client} | 로케이션: ${h.location}</p>
+                        </div>
+                        <span class="text-xs font-bold bg-blue-50 text-blue-600 px-3 py-1 rounded-lg">선택</span>
+                    </div>
+                `).join('');
+            }
+            openModal('return-select-modal');
+        });
+
+        // 탭 제어
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const tabTarget = e.target.dataset.tab;
+                document.querySelectorAll('.tab-btn').forEach(b => {
+                    b.classList.remove('text-blue-600', 'border-blue-600');
+                    b.classList.add('text-gray-400', 'border-transparent');
+                });
+                e.target.classList.remove('text-gray-400', 'border-transparent');
+                e.target.classList.add('text-blue-600', 'border-blue-600');
+
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active-tab'));
+                document.getElementById(tabTarget)?.classList.add('active-tab');
+            });
+        });
+
+        // 로케이션 자동 하이픈 변환
+        ['in-loc', 'ret-loc'].forEach(id => {
+            document.getElementById(id)?.addEventListener('input', (e) => {
+                let val = e.target.value.replace(/[^0-9]/g, '');
+                if (val.length > 7) val = val.substring(0, 7);
+                if (val.length === 7) {
+                    e.target.value = val.replace(/(\d{2})(\d{2})(\d{3})/, '$1-$2-$3');
+                }
+            });
+        });
+
+        // 자동 로그인 세션 체크
+        const auth = localStorage.getItem('btb_auth');
+        if (auth) {
+            isAdmin = JSON.parse(auth).isAdmin;
+            loginSuccess();
+        }
+    });
+</script>
+</body>
+</html>

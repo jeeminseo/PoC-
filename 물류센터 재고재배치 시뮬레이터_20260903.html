@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>물류센터 슬롯팅(Slotting) 전문 시뮬레이터 PoC v3.0</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- CSV 파싱 라이브러리 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans p-4 md:p-6">
+  <div class="max-w-[1600px] mx-auto space-y-6">
+    
+    <!-- Header & Data Upload -->
+    <header class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="bg-blue-600 text-white text-xs px-2.5 py-1 rounded-full font-semibold">PoC v3.0</span>
+          <h1 class="text-2xl font-bold text-slate-900">물류센터 재고 재배치(Slotting) 시뮬레이터</h1>
+        </div>
+        <p class="text-sm text-slate-500 mt-1">터치수 기반 동적 그라데이션 동선 시각화 및 반응형 화면 맞춤형 슬롯팅 시뮬레이션</p>
+      </div>
+
+      <!-- CSV Upload & Actions -->
+      <div class="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+        <button onclick="downloadSampleCSV()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-3.5 py-2.5 rounded-lg border border-slate-300 transition">
+          📄 샘플 CSV 다운로드
+        </button>
+        <label class="cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition shadow-sm flex items-center gap-1.5">
+          <span>📂 고객 데이터(CSV) 업로드</span>
+          <input type="file" id="csvFileInput" accept=".csv" class="hidden" onchange="handleFileUpload(event)">
+        </label>
+        <button onclick="runSimulation()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-5 py-2.5 rounded-lg transition shadow-sm">
+          ▶ 시뮬레이션 재실행
+        </button>
+      </div>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      
+      <!-- Left: Environment Settings Sidebar -->
+      <aside class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-5 h-fit">
+        <h2 class="font-bold text-base text-slate-800 border-b pb-2 flex items-center gap-2">
+          <span>⚙️ 센터 및 작업 환경 설정</span>
+        </h2>
+        
+        <!-- Visualization Controls -->
+        <div class="p-3 bg-blue-50/70 border border-blue-200 rounded-lg space-y-2">
+          <h3 class="text-xs font-bold text-blue-800 flex items-center gap-1">
+            <span>🗺️ 동선 시각화 옵션</span>
+          </h3>
+          <label class="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700">
+            <input type="checkbox" id="showRoutesToggle" checked onchange="runSimulation()" class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500">
+            <span>전체 파렛트랙 피킹 동선 표출</span>
+          </label>
+          <p class="text-[11px] text-slate-500 leading-tight">* 터치수가 높은 SKU일수록 선명하고 굵은 그라데이션 동선으로 표시됩니다.</p>
+        </div>
+
+        <!-- Rack Layout Settings -->
+        <div class="space-y-3">
+          <h3 class="text-xs font-bold text-blue-600 uppercase tracking-wider">1. 랙 구조 설정 (2랙 1통로)</h3>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">총 랙 열 수 (Rack Columns)</label>
+            <input type="number" id="gridX" value="8" min="2" max="20" step="2" class="w-full p-2 text-xs border rounded-md focus:ring-1 focus:ring-blue-500">
+            <p class="text-[10px] text-slate-400 mt-0.5">*2열마다 작업 통로(Aisle) 자동 생성</p>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">랙 행 수 (Depth / Bay)</label>
+            <input type="number" id="gridY" value="8" min="2" max="25" class="w-full p-2 text-xs border rounded-md focus:ring-1 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">랙 높이 단수 (Height Levels)</label>
+            <input type="number" id="gridZ" value="3" min="1" max="5" class="w-full p-2 text-xs border rounded-md focus:ring-1 focus:ring-blue-500">
+          </div>
+        </div>
+
+        <!-- Worker Settings -->
+        <div class="space-y-3 pt-2 border-t">
+          <h3 class="text-xs font-bold text-blue-600 uppercase tracking-wider">2. 작업자 및 운영 조건</h3>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">일일 총 처리 물량 (Total Picks)</label>
+            <input type="number" id="dailyPicks" value="2400" step="100" class="w-full p-2 text-xs border rounded-md">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">피킹 피커 수 (Workers)</label>
+            <input type="number" id="numWorkers" value="4" min="1" max="50" class="w-full p-2 text-xs border rounded-md">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">1인당 일일 근로시간 (Hours)</label>
+            <input type="number" id="workHours" value="8" min="1" max="12" class="w-full p-2 text-xs border rounded-md">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">피커 보행 속도 (m/min)</label>
+            <input type="number" id="pickerSpeed" value="60" step="5" class="w-full p-2 text-xs border rounded-md">
+          </div>
+        </div>
+
+        <div id="dataStatus" class="p-3 bg-slate-50 rounded-lg text-xs text-slate-600 border border-slate-200">
+          데이터 상태: <span id="dataStatusText" class="font-semibold text-blue-600">랜덤 파레토 데이터 사용 중</span>
+        </div>
+      </aside>
+
+      <!-- Main Section: KPIs & Visual Grids -->
+      <main class="lg:col-span-3 space-y-6">
+        
+        <!-- KPI Metrics Summary -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+            <span class="text-xs text-slate-500 font-medium">AS-IS 일일 총 이동거리</span>
+            <div id="kpiAsIsDist" class="text-xl font-bold text-slate-800 mt-1">- km</div>
+            <span id="kpiAsIsTimePerWorker" class="text-[11px] text-slate-400">인당 -시간 소요</span>
+          </div>
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+            <span class="text-xs text-slate-500 font-medium">TO-BE 일일 총 이동거리</span>
+            <div id="kpiToBeDist" class="text-xl font-bold text-blue-600 mt-1">- km</div>
+            <span id="kpiToBeTimePerWorker" class="text-[11px] text-blue-400">인당 -시간 소요</span>
+          </div>
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+            <span class="text-xs text-slate-500 font-medium">동선 절감률</span>
+            <div id="kpiSavedPct" class="text-2xl font-black text-emerald-600 mt-1">- %</div>
+            <span class="text-[11px] text-emerald-500 font-medium">총 동선 단축 비중</span>
+          </div>
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+            <span class="text-xs text-slate-500 font-medium">센터 일일 인건시간 절감</span>
+            <div id="kpiSavedTime" class="text-xl font-bold text-indigo-600 mt-1">- 시간</div>
+            <span id="kpiSavedManHours" class="text-[11px] text-indigo-400">약 -명분 공수 절감</span>
+          </div>
+        </div>
+
+        <!-- Visual Grids (Scroll-Free Responsive Layout) -->
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <!-- AS-IS Grid -->
+          <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-3 flex flex-col items-stretch">
+            <div class="flex justify-between items-center">
+              <h3 class="text-sm font-bold text-slate-800">AS-IS 랙 배치 (현재 무작위 상태)</h3>
+              <span class="text-[11px] text-slate-400">*전체 파렛트랙 동선 시각화</span>
+            </div>
+            <div class="w-full bg-slate-50 rounded-lg border border-slate-200 p-2 flex justify-center items-center overflow-hidden">
+              <canvas id="canvasAsIs" class="max-w-full h-auto block"></canvas>
+            </div>
+          </div>
+
+          <!-- TO-BE Grid -->
+          <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-3 flex flex-col items-stretch">
+            <div class="flex justify-between items-center">
+              <h3 class="text-sm font-bold text-blue-700">TO-BE 랙 배치 (최단거리 슬롯팅)</h3>
+              <span class="text-[11px] text-blue-500">*고터치 SKU 입출고구 최인접 배치</span>
+            </div>
+            <div class="w-full bg-slate-50 rounded-lg border border-slate-200 p-2 flex justify-center items-center overflow-hidden">
+              <canvas id="canvasToBe" class="max-w-full h-auto block"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Legend -->
+        <div class="bg-white p-3.5 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
+          <div class="flex items-center gap-2">
+            <span class="font-semibold">터치수 범례:</span>
+            <span>낮음 (0)</span>
+            <div class="w-24 h-3 rounded bg-gradient-to-r from-amber-100 via-rose-400 to-red-700"></div>
+            <span>높음</span>
+          </div>
+          <div class="flex items-center gap-4">
+            <div class="flex items-center gap-1.5">
+              <div class="w-8 h-1 bg-gradient-to-r from-red-500/20 via-amber-400/30 to-emerald-500/30 rounded"></div>
+              <span>저터치 SKU 동선 (옅음/투명)</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <div class="w-8 h-1 bg-gradient-to-r from-red-600 via-amber-500 to-emerald-600 rounded"></div>
+              <span>고터치 SKU 동선 (선명/굵음)</span>
+            </div>
+          </div>
+        </div>
+
+      </main>
+    </div>
+
+    <!-- Bottom Section: Detailed Calculation Formulas & Logic -->
+    <section class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+      <h2 class="text-base font-bold text-slate-900 border-b pb-2 flex items-center gap-2">
+        <span>📐 통로 전용 동선 산출 및 알고리즘 계산 근거</span>
+      </h2>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-xs text-slate-600 leading-relaxed">
+        
+        <!-- Formula 1 -->
+        <div class="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
+          <h3 class="font-bold text-slate-800 text-sm">1. 통로 경유(Aisle-Only) 이동 경로</h3>
+          <p class="font-mono text-blue-600 bg-blue-50 p-2 rounded border border-blue-100">
+            Path: Rack(X,Y) ➔ Facing_Aisle ➔ Main_Cross_Aisle ➔ Dock(0,0)<br>
+            Dist = (X_Aisle_Dist + Y_Aisle_Dist) + (Z - 1) * 2.0m
+          </p>
+          <ul class="list-disc pl-4 space-y-1 text-slate-500">
+            <li><b>파렛트랙 관통 방지</b>: 작업자가 파렛트랙을 가로지르지 않고 전면 통로로 빠져나온 후 통로 중심선으로 이동합니다.</li>
+            <li><b>메인 통로(Cross Aisle) 우회</b>: 통로를 통해 하단 메인 통로로 이동한 뒤 입출고구(Dock)로 직선 접근합니다.</li>
+            <li><b>Z축 단수 가중치</b>: 1단 상단 작업 시 장비 상하차/수직 이동 시간을 수평거리 2.0m 추가 이동으로 반영합니다.</li>
+          </ul>
+        </div>
+
+        <!-- Formula 2 -->
+        <div class="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
+          <h3 class="font-bold text-slate-800 text-sm">2. 슬롯팅 재배치 알고리즘</h3>
+          <p class="font-mono text-emerald-600 bg-emerald-50 p-2 rounded border border-emerald-100">
+            1. Total_Dist_Daily = Sum(Daily_Touch * Dist * 2)<br>
+            2. SKU List ➔ Daily_Touch 내림차순 정렬<br>
+            3. Rack List ➔ Dock 실제 통로 거리(Dist) 오름차순 정렬
+          </p>
+          <ul class="list-disc pl-4 space-y-1 text-slate-500">
+            <li><b>왕복 피킹 동선</b>: 입출고구 출발 ➔ 통로 경유 피킹 ➔ 복귀하는 왕복 거리(x 2) 산출.</li>
+            <li><b>ABC 최적화 매핑</b>: 통로 경유 동선 기준으로 Dock과 가장 가까운 통로 입구 및 1단 골든존에 고터치 SKU를 최선순위 할당합니다.</li>
+          </ul>
+        </div>
+
+        <!-- Formula 3 -->
+        <div class="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
+          <h3 class="font-bold text-slate-800 text-sm">3. 인력 및 작업시간 절감 계산</h3>
+          <p class="font-mono text-indigo-600 bg-indigo-50 p-2 rounded border border-indigo-100">
+            Total_Hours = Total_Dist_Daily / (Speed * 60)<br>
+            Saved_Hours = AS-IS_Hours - TO-BE_Hours<br>
+            Man_Power_Saved = Saved_Hours / Work_Hours_Daily
+          </p>
+          <ul class="list-disc pl-4 space-y-1 text-slate-500">
+            <li><b>소요 시간</b>: 이동거리(m)를 피커 평균 보행 속도(m/min)로 나누어 총 이동시간 산출.</li>
+            <li><b>인당 부담시간</b>: 일일 총 이동시간을 입력된 피커 인원수(Workers)로 분배.</li>
+            <li><b>공수 절감 환산</b>: 절감된 총 공수(Man-Hours)를 규정 근로시간으로 나누어 인력 감축 효과를 제시.</li>
+          </ul>
+        </div>
+
+      </div>
+    </section>
+
+  </div>
+
+  <script>
+    let customUploadedData = null;
+    let currentAsIsData = [];
+    let currentToBeData = [];
+
+    // Canvas column index calculator ensuring racks face open aisles directly
+    function getCanvasCol(rackX) {
+      return rackX + 1 + Math.floor(rackX / 2);
+    }
+
+    // Get the index of the aisle facing a given rack
+    function getFacingAisleCol(rackX) {
+      const aisleIndex = (rackX % 2 === 0) ? (rackX / 2) : Math.floor(rackX / 2) + 1;
+      return aisleIndex * 3;
+    }
+
+    // Run Simulation Main Logic
+    function runSimulation() {
+      const gridX = parseInt(document.getElementById('gridX').value);
+      const gridY = parseInt(document.getElementById('gridY').value);
+      const gridZ = parseInt(document.getElementById('gridZ').value);
+      const dailyPicks = parseInt(document.getElementById('dailyPicks').value);
+      const numWorkers = parseInt(document.getElementById('numWorkers').value);
+      const workHours = parseFloat(document.getElementById('workHours').value);
+      const pickerSpeed = parseFloat(document.getElementById('pickerSpeed').value);
+      const showRoutes = document.getElementById('showRoutesToggle').checked;
+
+      const totalRackSlots = gridX * gridY * gridZ;
+
+      // 1. Prepare SKU Touch Data
+      let skus = [];
+      if (customUploadedData && customUploadedData.length > 0) {
+        skus = customUploadedData.slice(0, totalRackSlots).map((d, i) => ({
+          id: d.SKU || `SKU_${i+1}`,
+          touches: parseInt(d.Touches || d.Picks || d.Touch || 0)
+        }));
+        while (skus.length < totalRackSlots) {
+          skus.push({ id: `SKU_EMPTY_${skus.length + 1}`, touches: 0 });
+        }
+      } else {
+        for (let i = 0; i < totalRackSlots; i++) {
+          const weight = Math.pow(Math.random(), -0.75);
+          skus.push({ id: `SKU_${i + 1}`, weight: weight });
+        }
+        const sumWeight = skus.reduce((a, b) => a + b.weight, 0);
+        skus.forEach(s => {
+          s.touches = Math.round((s.weight / sumWeight) * dailyPicks);
+        });
+      }
+
+      // 2. Generate Physical Distance Matrix
+      let racks = [];
+      for (let x = 0; x < gridX; x++) {
+        const aisleIdx = (x % 2 === 0) ? (x / 2) : Math.floor(x / 2) + 1;
+        const mainAisleDistMeters = aisleIdx * (2.4 + 2.5);
+        const stepIntoAisleDist = 1.85;
+
+        for (let y = 0; y < gridY; y++) {
+          const yAisleDistMeters = (y + 0.5) * 1.0;
+
+          for (let z = 1; z <= gridZ; z++) {
+            const dist = (mainAisleDistMeters + stepIntoAisleDist + yAisleDistMeters) + (z - 1) * 2.0;
+            racks.push({ x, y, z, dist, aisleIdx });
+          }
+        }
+      }
+
+      // 3. AS-IS Allocation
+      currentAsIsData = skus.map((sku, idx) => ({
+        ...sku,
+        ...racks[idx],
+        totalDist: sku.touches * racks[idx].dist * 2
+      }));
+
+      // 4. TO-BE Allocation
+      const sortedSkus = [...skus].sort((a, b) => b.touches - a.touches);
+      const sortedRacks = [...racks].sort((a, b) => a.dist - b.dist);
+      currentToBeData = sortedSkus.map((sku, idx) => ({
+        ...sku,
+        ...sortedRacks[idx],
+        totalDist: sku.touches * sortedRacks[idx].dist * 2
+      }));
+
+      // 5. KPI Calculations
+      const asisDistKm = currentAsIsData.reduce((sum, item) => sum + item.totalDist, 0) / 1000;
+      const tobeDistKm = currentToBeData.reduce((sum, item) => sum + item.totalDist, 0) / 1000;
+      const savedDistKm = asisDistKm - tobeDistKm;
+      const savedPct = asisDistKm > 0 ? (savedDistKm / asisDistKm) * 100 : 0;
+
+      const asisTotalHours = (asisDistKm * 1000 / pickerSpeed) / 60;
+      const tobeTotalHours = (tobeDistKm * 1000 / pickerSpeed) / 60;
+      const savedHours = asisTotalHours - tobeTotalHours;
+
+      const asisHoursPerWorker = asisTotalHours / numWorkers;
+      const tobeHoursPerWorker = tobeTotalHours / numWorkers;
+      const savedManPower = savedHours / workHours;
+
+      // Update UI Metrics
+      document.getElementById('kpiAsIsDist').innerText = `${asisDistKm.toFixed(1)} km`;
+      document.getElementById('kpiAsIsTimePerWorker').innerText = `인당 약 ${asisHoursPerWorker.toFixed(1)}시간 이동`;
+
+      document.getElementById('kpiToBeDist').innerText = `${tobeDistKm.toFixed(1)} km`;
+      document.getElementById('kpiToBeTimePerWorker').innerText = `인당 약 ${tobeHoursPerWorker.toFixed(1)}시간 이동`;
+
+      document.getElementById('kpiSavedPct').innerText = `-${savedPct.toFixed(1)}%`;
+      document.getElementById('kpiSavedTime').innerText = `-${savedHours.toFixed(1)} 시간`;
+      document.getElementById('kpiSavedManHours').innerText = `약 -${savedManPower.toFixed(1)}명분 공수 절감`;
+
+      // Render Canvas Grids
+      renderWarehouseGrid('canvasAsIs', currentAsIsData, gridX, gridY, showRoutes);
+      renderWarehouseGrid('canvasToBe', currentToBeData, gridX, gridY, showRoutes);
+    }
+
+    // Canvas Visual Renderer: Fully Dynamic Resizing (Scroll-Free) & Multi-level Gradient Routes
+    function renderWarehouseGrid(canvasId, data, gridX, gridY, showRoutes) {
+      const canvas = document.getElementById(canvasId);
+      const ctx = canvas.getContext('2d');
+      const container = canvas.parentElement;
+
+      const totalAisles = Math.floor(gridX / 2) + 1;
+      const totalGridCols = gridX + totalAisles;
+      const totalGridRows = gridY + 1; // +1 row for Main Cross Aisle & Dock
+
+      // Dynamically calculate cell size to fit parent container perfectly without scrollbars
+      const availableWidth = container.clientWidth - 12;
+      const cellWidth = Math.max(22, availableWidth / totalGridCols);
+      const cellHeight = Math.min(36, Math.max(20, cellWidth * 0.8));
+
+      canvas.width = totalGridCols * cellWidth;
+      canvas.height = totalGridRows * cellHeight;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const level1Data = data.filter(d => d.z === 1);
+      const maxTouches = Math.max(...level1Data.map(d => d.touches), 1);
+
+      // 1. Draw Main Cross Aisle & Dock
+      ctx.fillStyle = '#f1f5f9';
+      ctx.fillRect(0, gridY * cellHeight, canvas.width, cellHeight);
+
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, gridY * cellHeight, cellWidth * 2, cellHeight);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `bold ${Math.max(9, Math.floor(cellHeight * 0.32))}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🚪 Dock', cellWidth, (gridY + 0.5) * cellHeight);
+
+      // 2. Draw Vertical Aisles
+      for (let a = 0; a < totalAisles; a++) {
+        const aisleCol = a * 3;
+        ctx.fillStyle = '#e2e8f0';
+        ctx.fillRect(aisleCol * cellWidth, 0, cellWidth, gridY * cellHeight);
+        
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = `${Math.max(8, Math.floor(cellHeight * 0.28))}px sans-serif`;
+        ctx.fillText(`통로${a+1}`, (aisleCol + 0.5) * cellWidth, (gridY / 2) * cellHeight);
+      }
+
+      // 3. Draw Pallet Rack Cells
+      level1Data.forEach(item => {
+        const col = getCanvasCol(item.x);
+        const row = gridY - 1 - item.y;
+        const intensity = item.touches / maxTouches;
+
+        const r = Math.round(254 - (intensity * 30));
+        const g = Math.round(240 - (intensity * 190));
+        const b = Math.round(200 - (intensity * 160));
+
+        ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+        ctx.fillRect(col * cellWidth, row * cellHeight, cellWidth - 1.5, cellHeight - 1.5);
+
+        ctx.strokeStyle = '#cbd5e1';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(col * cellWidth, row * cellHeight, cellWidth - 1.5, cellHeight - 1.5);
+      });
+
+      // 4. Draw All Route Arrows Simultaneously (Gradient & Opacity Based on Touches)
+      if (showRoutes) {
+        // Sort racks by touches ascending so lower-touch faint lines render beneath high-touch vivid lines
+        const sortedForRoutes = [...level1Data].sort((a, b) => a.touches - b.touches);
+
+        sortedForRoutes.forEach(item => {
+          if (item.touches <= 0) return;
+
+          const intensity = item.touches / maxTouches; // 0.0 to 1.0
+
+          // Calculate Dynamic Opacity and Line Thickness
+          const alphaStart = 0.08 + (intensity * 0.72); // 0.08 ~ 0.80
+          const alphaMid   = 0.12 + (intensity * 0.78); // 0.12 ~ 0.90
+          const alphaEnd   = 0.18 + (intensity * 0.82); // 0.18 ~ 1.00
+          const strokeWidth = 0.8 + (intensity * 2.2);   // 0.8px ~ 3.0px
+
+          const rackCol = getCanvasCol(item.x);
+          const rackRow = gridY - 1 - item.y;
+
+          const startX = (rackCol + 0.5) * cellWidth;
+          const startY = (rackRow + 0.5) * cellHeight;
+
+          const facingAisleCol = getFacingAisleCol(item.x);
+          const aisleX = (facingAisleCol + 0.5) * cellWidth;
+          const mainCrossAisleY = (gridY + 0.5) * cellHeight;
+          const dockX = cellWidth;
+
+          // Polyline Path: Rack ➔ Facing Aisle ➔ Main Cross Aisle ➔ Dock Entrance
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(startX, startY);
+          ctx.lineTo(aisleX, startY);
+          ctx.lineTo(aisleX, mainCrossAisleY);
+          ctx.lineTo(dockX, mainCrossAisleY);
+
+          // Sophisticated Gradient Color
+          const grad = ctx.createLinearGradient(startX, startY, dockX, mainCrossAisleY);
+          grad.addColorStop(0, `rgba(239, 68, 68, ${alphaStart})`);    // Red (Origin)
+          grad.addColorStop(0.45, `rgba(245, 158, 11, ${alphaMid})`);  // Amber (Middle Aisle)
+          grad.addColorStop(1, `rgba(16, 185, 129, ${alphaEnd})`);    // Emerald Green (Dock)
+
+          ctx.strokeStyle = grad;
+          ctx.lineWidth = strokeWidth;
+
+          // Solid line for high-touch (>50%), subtle dash for low-touch
+          if (intensity < 0.5) {
+            ctx.setLineDash([3, 2]);
+          } else {
+            ctx.setLineDash([]);
+          }
+          ctx.stroke();
+
+          // Render Arrowheads on Dock Entry for Moderate-to-High Touch Items
+          if (intensity > 0.2) {
+            const arrowSize = 3 + (intensity * 4);
+            drawArrowHead(ctx, aisleX, mainCrossAisleY, dockX + 12, mainCrossAisleY, `rgba(16, 185, 129, ${alphaEnd})`, arrowSize);
+          }
+          ctx.restore();
+        });
+      }
+
+      // 5. Draw Touch Count Overlay Numbers
+      level1Data.forEach(item => {
+        const col = getCanvasCol(item.x);
+        const row = gridY - 1 - item.y;
+        const intensity = item.touches / maxTouches;
+
+        ctx.fillStyle = intensity > 0.6 ? '#ffffff' : '#0f172a';
+        ctx.font = `bold ${Math.max(8, Math.floor(cellHeight * 0.32))}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(item.touches, (col + 0.5) * cellWidth, (row + 0.5) * cellHeight);
+      });
+    }
+
+    // Helper: Draw Arrowhead
+    function drawArrowHead(ctx, fromX, fromY, toX, toY, color, size) {
+      const angle = Math.atan2(toY - fromY, toX - fromX);
+      ctx.save();
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(toX, toY);
+      ctx.lineTo(toX - size * Math.cos(angle - Math.PI / 6), toY - size * Math.sin(angle - Math.PI / 6));
+      ctx.lineTo(toX - size * Math.cos(angle + Math.PI / 6), toY - size * Math.sin(angle + Math.PI / 6));
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // CSV File Upload Handler
+    function handleFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: function(results) {
+          if (results.data && results.data.length > 0) {
+            customUploadedData = results.data;
+            document.getElementById('dataStatusText').innerText = `업로드 데이터 적용됨 (${results.data.length}개 SKU)`;
+            document.getElementById('dataStatusText').className = 'font-semibold text-emerald-600';
+            runSimulation();
+          } else {
+            alert('CSV 파일에 유효한 데이터가 없습니다.');
+          }
+        },
+        error: function(err) {
+          alert('CSV 파싱 오류: ' + err.message);
+        }
+      });
+    }
+
+    // Sample CSV Download Generator
+    function downloadSampleCSV() {
+      let csvContent = "data:text/csv;charset=utf-8,SKU,Touches\n";
+      for (let i = 1; i <= 300; i++) {
+        const touches = Math.round(Math.pow(Math.random(), -0.8) * 10);
+        csvContent += `SKU_${String(i).padStart(3, '0')},${touches}\n`;
+      }
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", "물류센터_재고_터치수_샘플데이터.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    // Auto-resize on window resize to ensure zero scrollbars
+    window.onresize = function() {
+      if (currentAsIsData.length > 0) {
+        runSimulation();
+      }
+    };
+
+    // Initial Execution
+    window.onload = runSimulation;
+  </script>
+</body>
+</html>
